@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Major Project - Vatsal (17104060)</title>
+  <script src="/static/face-api.js"></script>
+  <script src="/static/commons.js"></script>
+  <script src="/static/faceDetectionControls.js"></script>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.100.2/css/materialize.css">
+  <script type="text/javascript" src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.100.2/js/materialize.min.js"></script>
+</head>
+
+<body id='bodycolor'>
+  <div class="text-center" id="navbar"></div>
+  <div class="page-container blue-text text-darken-1">
+
+    <div style="position: relative" class="video-section mx-auto">
+      <img src="{{ url_for('video_feed') }}">
+      <canvas id="overlay" />
+    </div>
+
+    <div class="control-wrapper">
+      <div class="side-by-side model-section">
+        <div class="selection-wrapper">
+          <label class="blue-text text-darken-1">Minimum Social Distance:</label>
+          <input value="" id="distance" type="text" class="bold" style="color: #1de9b6; background-color: #1c1c1c; text-align: center;">
+          <!-- Input Size Selection -->
+
+        </div>
+      </div>
+
+      <!-- Distance meter -->
+      <div class="distance-meter model-section-2" style="font-size: 30px;">
+        <div id="distance-alert" class="mt-2 px-5 text-red text-center font-bold font-22 break-word">
+        </div>
+      </div>
+      <!-- Distance meter -->
+
+      <!-- fps_meter -->
+      <div id="fps_meter" class="model-section-1" style="padding: 0 0px;">
+        <div>
+          <label class="blue-text text-darken-1" for="location">Location:</label>
+          <input value="Video Location" id="location" type="text" class="bold" style="color: #1de9b6; background-color: #1c1c1c; text-align: center;">
+        </div>
+      </div>
+      <!-- fps_meter -->
+    </div>
+
+    <div class="control-wrapper justify-center">
+      <!-- ssd_mobilenetv1_controls -->
+      <span id="ssd_mobilenetv1_controls" class="mb-10 mt-2 mx-5">
+        <div class="side-by-side">
+          <div style="margin: 0 0;">
+            <label class="blue-text text-darken-1" for="minConfidence">Min Confidence:</label>
+            <input disabled value="0.5" id="minConfidence" type="text" class="bold" style="color: #1de9b6; background-color: #1c1c1c; text-align: center;">
+          </div>
+
+          <div class="btn-group" style="margin: auto;">
+            <button class="waves-effect waves-light btn my-1 blue darken-3 z-depth-1" style="margin: 0 0; border-radius: 0;" onclick="onIncreaseMinConfidence()">
+              <i class="material-icons">+</i>
+            </button>
+            <button class="waves-effect waves-light btn my-1 blue darken-4 z-depth-1" style="margin: 0 0; border-radius: 0;" onclick="onDecreaseMinConfidence()">
+              <i class="material-icons">-</i>
+            </button>
+          </div>
+        </div>
+      </span>
+      <!-- ssd_mobilenetv1_controls -->
+    </div>
+    <!-- tiny_face_detector_controls -->
+  </div>
+</body>
+
+<script>
+  let forwardTimes = []
+  let withFaceLandmarks = false
+  let withBoxes = true
+
+  function onIncreaseMinConfidence(e) {
+    var n = parseFloat(document.getElementById("minConfidence").value) * 100
+    if(n < 100){
+      n += 10
+      document.getElementById("minConfidence").value = n/100
+
+      $.ajax({
+        type: "POST",
+        url: "/set_confidence/" + document.getElementById("minConfidence").value
+      })
+    }
+  }
+
+  function onDecreaseMinConfidence(e) {
+    var n = parseFloat(document.getElementById("minConfidence").value) * 100
+    if(n > 10){
+      n -= 10
+      document.getElementById("minConfidence").value = n/100
+
+      $.ajax({
+        type: "POST",
+        url: "/set_confidence/" + document.getElementById("minConfidence").value
+      })
+    }
+  }
+
+  function onIncreaseScoreThreshold(e) {
+    var n = parseFloat(document.getElementById("scoreThreshold").value) * 100
+    if(n < 100){
+      n += 10
+      document.getElementById("scoreThreshold").value = n/100
+
+      $.ajax({
+        type: "POST",
+        url: "/set_min_distance/" + document.getElementById("scoreThreshold").value
+      })
+    }
+  }
+
+  function onDecreaseScoreThreshold(e) {
+    var n = parseFloat(document.getElementById("scoreThreshold").value) * 100
+    if(n > 10){
+      n -= 10
+      document.getElementById("scoreThreshold").value = n/100
+
+      $.ajax({
+        type: "POST",
+        url: "/set_min_distance/" + document.getElementById("scoreThreshold").value
+      })
+    }
+  }
+
+  function onChangeWithFaceLandmarks(e) {
+    withFaceLandmarks = $(e.target).prop('checked')
+  }
+
+  function onChangeHideBoundingBoxes(e) {
+    withBoxes = !$(e.target).prop('checked')
+  }
+
+  function updateTimeStats(timeInMs) {
+    forwardTimes = [timeInMs].concat(forwardTimes).slice(0, 30)
+    const avgTimeInMs = forwardTimes.reduce((total, t) => total + t) / forwardTimes.length
+    $('#time').val(`${Math.round(avgTimeInMs)} ms`)
+    $('#fps').val(`${faceapi.utils.round(1000 / avgTimeInMs)}`)
+  }
+
+  function updateMeter(value) {
+    $('#distance-value').text(`${value}`)
+  }
+
+  function updateAlert(value) {
+    $('#distance-alert').text(`${value}`)
+  }
+
+  function isEmpty(obj) {
+    for (var key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  function isUndefinedOrNullOrEmpty(value) {
+    if (null === value || undefined === value) return true;
+    if ('string' === typeof value) {
+      if ('' == value) return true;
+      return false;
+    }
+
+    if ('number' === typeof value) return false;
+
+    if ('object' === typeof value) {
+      if (Array.isArray(value)) {
+        if (0 >= value.length) return true;
+        return false;
+      }
+
+      if (0 >= Object.keys(value).length) return true;
+      return false;
+    }
+
+    return true;
+  };
+
+  async function onPlay(videoEl) {
+    if (!videoEl.currentTime || videoEl.paused || videoEl.ended || !isFaceDetectionModelLoaded())
+      return setTimeout(() => onPlay(videoEl))
+
+
+    const options = getFaceDetectorOptions()
+
+    const ts = Date.now()
+
+    const drawBoxes = withBoxes
+    const drawLandmarks = withFaceLandmarks
+
+    let task = faceapi.detectAllFaces(videoEl, options);
+    task = withFaceLandmarks ? task.withFaceLandmarks() : task
+    const results = await task
+    if (!isUndefinedOrNullOrEmpty(results[0]) && !isUndefinedOrNullOrEmpty(results[1])) {
+      let x1 = '';
+      let x2 = '';
+      let y1 = '';
+      let y2 = '';
+      if (withFaceLandmarks && !isUndefinedOrNullOrEmpty(results[0].detection)) {
+        x1 = results[0].detection.box.x;
+        x2 = results[1].detection.box.x;
+        y1 = results[0].detection.box.y;
+        y2 = results[1].detection.box.y;
+      } else {
+        if (!isUndefinedOrNullOrEmpty(results[0].box)) {
+          x1 = results[0].box.x;
+          x2 = results[1].box.x;
+          y1 = results[0].box.y;
+          y2 = results[1].box.y;
+        }
+      }
+      const dist = faceapi.euclideanDistance([x1, y1], [x2, y2]);
+      updateMeter((dist / 730).toFixed(2) + 'm');
+      if (dist < 730) {
+        updateAlert(`Alert! Distance less than 1 meter.`);
+      } else {
+        updateAlert("");
+      }
+    } else {
+      updateMeter(0);
+      updateAlert("");
+    }
+
+    updateTimeStats(Date.now() - ts)
+
+    const canvas = $('#overlay').get(0)
+    const dims = faceapi.matchDimensions(canvas, videoEl, true)
+
+    const resizedResults = faceapi.resizeResults(results, dims)
+    if (drawBoxes) {
+      faceapi.draw.drawDetections(canvas, resizedResults)
+    }
+    if (drawLandmarks) {
+      faceapi.draw.drawFaceLandmarks(canvas, resizedResults)
+    }
+
+    setTimeout(() => onPlay(videoEl))
+  }
+
+  async function run() {
+    // load face detection and face landmark models
+    await changeFaceDetector(TINY_FACE_DETECTOR)
+    await faceapi.loadFaceLandmarkModel('/')
+    changeInputSize(416)
+
+    // start processing frames
+    onPlay($('#inputVideo').get(0))
+  }
+
+  function updateResults() { }
+
+  $.ajax({
+      type: "GET",
+      url: "/get_location",
+      success: function(data) {
+        document.getElementById("location").value = data;
+      } 
+    })
+
+  $.ajax({
+    type: "GET",
+    url: "/get_min_distance",
+    success: function(data) {
+      document.getElementById("distance").value = data;
+    } 
+  })
+
+  $(document).ready(function () {
+    renderNavBar('#navbar', 'social_distancing_tracker')
+    initFaceDetectionControls()
+    run()
+  })
+</script>
+</body>
+
+</html>

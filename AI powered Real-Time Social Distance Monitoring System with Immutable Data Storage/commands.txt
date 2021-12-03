@@ -1,0 +1,5 @@
+To run:
+1) cd src
+2) Open Ganache QuickServer (port 8545)
+3) python main.py --input "static/test2.mp4" --location "Paris"
+4) Open any browser and go to localhost:8000
